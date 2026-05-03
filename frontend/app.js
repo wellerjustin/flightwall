@@ -17,6 +17,7 @@
   const POLL_MS = 2000;     // matches backend POLL_INTERVAL by default
   const CLOCK_MS = 1000;
   const STALE_MS = 30000;   // banner the connection if no good poll in 30s
+  const ALERT_NM = 10;      // proximity alert ring (NM from station)
 
   // DOM handles
   const $ = (id) => document.getElementById(id);
@@ -44,7 +45,105 @@
     setLon:    $("setLon"),
     setRange:  $("setRange"),
     setSource: $("setSource"),
+    zoomIn:    $("zoomIn"),
+    zoomOut:   $("zoomOut"),
+    zoomReadout: $("zoomReadout"),
+    rangeLabel:  $("rangeLabel"),
+    radarSection: document.querySelector(".radar-section"),
+    alertBanner: $("alertBanner"),
+    alertBody:   $("alertBody"),
+    alertClose:  $("alertClose"),
   };
+
+  // Tracks which aircraft (by hex) are currently flagged as in-zone
+  // so we only banner-alert on first entry.
+  const inAlertZone = new Set();
+  let alertDismissedHex = null;
+  let alertHideTimer = null;
+
+  function showAlert(a) {
+    if (!els.alertBanner) return;
+    const phase = phaseLabel(a.phase);
+    const klass = a.klass === "mil" ? "MILITARY" : "CIVILIAN";
+    const fl = fmtAlt(a.alt);
+    const gs = fmtSpd(a.gs);
+    const idLine = a.reg ? `${a.type || "----"} · ${a.reg}` : (a.type || "----");
+    els.alertBody.innerHTML = `
+      <div class="ab-row"><span>FLIGHT</span><b>${a.callsign || "——"}</b></div>
+      <div class="ab-row"><span>TYPE / REG</span><b>${idLine}</b></div>
+      <div class="ab-row"><span>CLASS</span><b>${klass}</b></div>
+      <div class="ab-row"><span>FL · GS</span><b>${fl} · ${gs} kt</b></div>
+      <div class="ab-row"><span>DIST</span><b>${a.dist_nm != null ? a.dist_nm.toFixed(1) + " NM" : "---"}</b></div>
+      <div class="ab-row"><span>PHASE</span><b>${phase}</b></div>
+    `;
+    els.alertBanner.classList.add("show");
+    if (alertHideTimer) clearTimeout(alertHideTimer);
+    alertHideTimer = setTimeout(() => els.alertBanner.classList.remove("show"), 12000);
+  }
+
+  function hideAlert() {
+    if (els.alertBanner) els.alertBanner.classList.remove("show");
+  }
+
+  // Zoom presets (NM). Mouse wheel and buttons step through these.
+  const ZOOM_STEPS = [10, 25, 50, 100, 150, 250];
+
+  function nearestStep(nm) {
+    let best = ZOOM_STEPS[0], dBest = Infinity;
+    for (const s of ZOOM_STEPS) {
+      const d = Math.abs(s - nm);
+      if (d < dBest) { dBest = d; best = s; }
+    }
+    return ZOOM_STEPS.indexOf(best);
+  }
+
+  let zoomBusy = false;
+  async function setRangeNm(newRange) {
+    if (zoomBusy) return;
+    if (newRange === station.range_nm) return;
+    zoomBusy = true;
+    try {
+      const r = await fetch("/api/station", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({range_nm: newRange}),
+      });
+      if (r.ok) {
+        station = await r.json();
+        updateRangeUI();
+        loadLandmarks();
+      }
+    } catch (e) { /* offline, ignore */ }
+    finally { zoomBusy = false; }
+  }
+  function updateRangeUI() {
+    const nm = Math.round(station.range_nm || 0);
+    if (els.zoomReadout) els.zoomReadout.textContent = `${nm} NM`;
+    if (els.rangeLabel)  els.rangeLabel.textContent  = nm;
+    drawRangeTicks(nm);
+  }
+
+  // Render scale labels on the 090 (east) bearing line — amber, scaled to current range.
+  // Rings sit at 0.2, 0.4, 0.6, 0.8, 1.0 of the outer ring radius (460 in viewBox 1000x1000).
+  function drawRangeTicks(rangeNm) {
+    const layer = document.getElementById("rangeTicks");
+    if (!layer || !rangeNm) return;
+    const rings = [0.2, 0.4, 0.6, 0.8, 1.0];
+    let svg = "";
+    for (const frac of rings) {
+      const x = 500 + 460 * frac;
+      const y = 492;  // sit just above the 090 line
+      const nm = Math.round(rangeNm * frac);
+      const label = (frac === 1.0) ? `${nm} NM` : `${nm}`;
+      svg += `<text x="${x + 6}" y="${y}">${label}</text>`;
+    }
+    layer.innerHTML = svg;
+  }
+  function zoomBy(delta) {
+    const idx = nearestStep(station.range_nm || 50);
+    const next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, idx + delta));
+    setRangeNm(ZOOM_STEPS[next]);
+  }
 
   // --- station info ---
   let station = { tz: "America/Phoenix", source: "---", range_nm: 250 };
@@ -55,6 +154,7 @@
       if (r.ok) station = await r.json();
       els.src.textContent = `SOURCE: ${station.source.toUpperCase()}`;
       updateStationLabel();
+      updateRangeUI();
     } catch (e) {
       els.src.textContent = "SOURCE: OFFLINE";
     }
@@ -132,59 +232,46 @@
   }
   function classLabel(k) { return k === "mil" ? "MIL" : "CIV"; }
 
-  // Build a leader-line angle so the datablock sits "ahead-and-up" of the
-  // track, like real ATC scopes. If we have a track heading, push the
-  // datablock 45 deg off that. Otherwise default up-and-right.
-  function leaderAngleDeg(track) {
-    if (track === null || track === undefined) return -45;
-    // Datablock placed to the right and above the symbol = heading + ~60 deg.
-    return ((track + 60) % 360) - 90;
+  // Aircraft symbol = directional triangle.
+  // Apex points up at 0deg → rotate by track heading (0=N, 90=E, etc.) to
+  // make the apex point in the actual direction of travel.
+  // Mil aircraft get a filled triangle so they pop on the scope.
+  function aircraftSymbol(klass, trackDeg) {
+    const rot = (typeof trackDeg === "number") ? trackDeg : 0;
+    const fill = klass === "mil" ? "currentColor" : "none";
+    return `<svg viewBox="0 0 14 14" style="transform: rotate(${rot}deg);"><polygon points="7,1 12,12 7,9.5 2,12" fill="${fill}" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
   }
-
-  // Compute the px offset for the datablock based on leader angle.
-  // Leader is 26px long; datablock anchors at the leader's far end.
-  function datablockOffset(angleDeg) {
-    const a = (angleDeg * Math.PI) / 180;
-    const r = 26;
-    const dx = Math.cos(a) * r;
-    const dy = Math.sin(a) * r;
-    // Adjust further so the text doesn't sit on top of the leader endpoint
-    return { dx: dx + (dx < 0 ? -90 : 4), dy: dy + (dy < 0 ? -40 : 4) };
-  }
-
-  // --- symbol SVG fragments ---
-  const SYM_SQUARE   = '<svg viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
-  const SYM_DIAMOND  = '<svg viewBox="0 0 14 14"><polygon points="7,1 13,7 7,13 1,7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
-  const SYM_TRIANGLE = '<svg viewBox="0 0 14 14"><polygon points="7,2 12,12 2,12" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
-  const SYMBOLS = { square: SYM_SQUARE, diamond: SYM_DIAMOND, triangle: SYM_TRIANGLE };
 
   // --- render: radar targets ---
   function renderTargets(aircraft) {
     const frag = document.createDocumentFragment();
+    const presentInZone = new Set();
     for (const a of aircraft) {
       const div = document.createElement("div");
-      div.className = `target ${a.phase}` + (a.klass === "mil" ? " mil" : "");
+      const isAlert = (typeof a.dist_nm === "number") && a.dist_nm <= ALERT_NM;
+      if (isAlert) {
+        presentInZone.add(a.hex);
+        if (!inAlertZone.has(a.hex) && alertDismissedHex !== a.hex) {
+          showAlert(a);
+        }
+      }
+      div.className = `target ${a.phase}` + (a.klass === "mil" ? " mil" : "") + (isAlert ? " alert" : "");
       div.style.top  = `${a.y}%`;
       div.style.left = `${a.x}%`;
 
-      const angle = leaderAngleDeg(a.track);
-      const off = datablockOffset(angle);
-
-      // Build line 2: "FL ↕ GS"
+      // Build line 3: "FL ↕ GS"
       const fl = fmtAlt(a.alt);
       const arr = vrateArrow(a.vrate);
       const gs = fmtSpd(a.gs);
 
-      // L2: type + registration (better aircraft ID than the squawk).
-      // Falls back gracefully when fields are missing.
+      // L2: type + registration
       const type = a.type || "----";
       const reg  = a.reg  || "";
       const idLine = reg ? `${type} · ${reg}` : type;
 
       div.innerHTML = `
-        <div class="sym">${SYMBOLS[a.sym] || SYM_SQUARE}</div>
-        <div class="leader" style="transform: rotate(${angle}deg);"></div>
-        <div class="db" style="left:${off.dx}px;top:${off.dy}px;">
+        <div class="sym">${aircraftSymbol(a.klass, a.track)}</div>
+        <div class="db" style="left:14px;top:-32px;">
           <div class="l1">${a.callsign}</div>
           <div class="l2">${idLine}</div>
           <div class="l3">${fl} ${arr} ${gs}</div>
@@ -193,6 +280,14 @@
       frag.appendChild(div);
     }
     els.targets.replaceChildren(frag);
+    // Sync the alert-zone set: drop hexes that left the zone.
+    for (const hex of inAlertZone) {
+      if (!presentInZone.has(hex)) inAlertZone.delete(hex);
+    }
+    for (const hex of presentInZone) inAlertZone.add(hex);
+    if (alertDismissedHex && !presentInZone.has(alertDismissedHex)) {
+      alertDismissedHex = null;
+    }
   }
 
   // --- render: track polylines (SVG) ---
@@ -352,6 +447,30 @@
       layer.innerHTML = svg;
     } catch (e) { /* offline; no overlay */ }
   }
+
+  if (els.alertClose) {
+    els.alertClose.addEventListener("click", () => {
+      // Remember the most-recent in-zone target so we don't re-show until they leave.
+      const last = Array.from(inAlertZone)[0];
+      if (last) alertDismissedHex = last;
+      hideAlert();
+    });
+  }
+
+  // Zoom: scroll wheel on radar + buttons + keyboard
+  if (els.zoomIn)  els.zoomIn.addEventListener("click", () => zoomBy(-1));   // smaller range
+  if (els.zoomOut) els.zoomOut.addEventListener("click", () => zoomBy(+1));  // larger range
+  if (els.radarSection) {
+    els.radarSection.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      zoomBy(e.deltaY > 0 ? +1 : -1);
+    }, { passive: false });
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (e.key === "+" || e.key === "=") zoomBy(-1);
+    if (e.key === "-" || e.key === "_") zoomBy(+1);
+  });
 
   loadStation().then(() => {
     loadLandmarks();

@@ -23,7 +23,7 @@ from .config import settings
 from .sources import make_source
 from .services.tracker import Tracker
 from .services.enricher import enrich
-from .services.projector import project, project_history
+from .services.projector import project, project_history, distance_nm
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("flightwall")
@@ -178,6 +178,7 @@ async def aircraft() -> JSONResponse:
         pos = project(rec.get("lat"), rec.get("lon"))
         if pos is None:
             continue  # no usable position yet — skip rendering this turn
+        dist = distance_nm(rec.get("lat"), rec.get("lon"))
         out.append({
             "hex":      rec["hex"],
             "callsign": rec["callsign"],
@@ -193,6 +194,7 @@ async def aircraft() -> JSONResponse:
             "sym":      rec["sym"],
             "x":        pos[0],
             "y":        pos[1],
+            "dist_nm":  round(dist, 1) if dist is not None else None,
             "history":  project_history(entry["history"]),
             "first_seen":  entry["first_seen"],
             "last_update": entry["last_update"],

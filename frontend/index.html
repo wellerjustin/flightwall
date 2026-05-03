@@ -109,6 +109,38 @@
   }
   .gear-btn svg { width: 20px; height: 20px; display: block; }
 
+  /* Zoom controls — sit at the top-right of the radar */
+  .zoom-stack {
+    position: absolute;
+    top: 12px; right: 12px;
+    display: flex; flex-direction: column;
+    gap: 6px;
+    z-index: 5;
+  }
+  .zoom-btn {
+    width: 30px; height: 30px;
+    background: rgba(20,20,20,0.85);
+    border: 1px solid var(--green-dim);
+    color: var(--green-bright);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px; font-weight: 700;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1;
+    user-select: none;
+  }
+  .zoom-btn:hover { background: rgba(40,80,40,0.85); }
+  .zoom-readout {
+    background: rgba(20,20,20,0.85);
+    border: 1px solid var(--green-dim);
+    color: var(--green-bright);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-align: center;
+    padding: 4px 0;
+    letter-spacing: 1px;
+  }
+
   /* Settings modal */
   .modal-backdrop {
     position: fixed; inset: 0;
@@ -205,20 +237,65 @@
     line-height: 1.4;
   }
 
-  /* RADAR + STATS STRIP */
+  /* RADAR (full-width, no sidebar) */
   .strip {
-    display: grid;
-    grid-template-columns: 1fr 320px;
+    display: block;
     border-bottom: 2px solid var(--cream);
     background: var(--board);
-    height: 46vh;
-    min-height: 360px;
+    height: 56vh;
+    min-height: 420px;
   }
   .radar-section {
     position: relative;
     overflow: hidden;
-    border-right: 1px solid var(--line);
     background: var(--radar-bg);
+    height: 100%;
+  }
+
+  /* Horizontal stat bar — replaces the old right sidebar */
+  .stat-bar {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0;
+    background: var(--board);
+    border-bottom: 1px solid var(--line);
+    border-top: 1px solid var(--line);
+    height: 48px;
+  }
+  .stat-bar .cell {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 18px;
+    border-right: 1px solid var(--line);
+  }
+  .stat-bar .cell:last-child { border-right: none; }
+  .stat-bar .k {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--cream-dim);
+  }
+  .stat-bar .v {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--cream);
+    letter-spacing: 1px;
+  }
+  .stat-bar .v small {
+    font-size: 10px;
+    color: var(--cream-dim);
+    letter-spacing: 1px;
+    margin-left: 3px;
+  }
+  .stat-bar .cell.accent .v { color: var(--amber); }
+  .stat-bar .cell.title {
+    font-family: 'Bebas Neue', sans-serif;
+    color: var(--amber);
+    letter-spacing: 3px;
+    font-size: 14px;
+    justify-content: flex-start;
   }
   .radar-label {
     position: absolute;
@@ -385,51 +462,106 @@
     padding: 2px 5px;
   }
 
+  /* PROXIMITY ALERT — aircraft inside the alert ring */
+  .target.alert {
+    color: #ff3b3b !important;
+    z-index: 9;
+    animation: prox-pulse 1.0s ease-in-out infinite;
+  }
+  .target.alert .db {
+    color: #ff5050 !important;
+    text-shadow: 0 0 6px #ff3b3b !important;
+    border: 1px solid #ff3b3b;
+    background: rgba(40,0,0,0.5);
+    padding: 2px 5px;
+  }
+  .target.alert .sym svg polygon {
+    stroke: #ff3b3b;
+    fill: #ff3b3b;
+  }
+  @keyframes prox-pulse {
+    0%, 100% { filter: drop-shadow(0 0 2px #ff3b3b); }
+    50%      { filter: drop-shadow(0 0 10px #ff3b3b); }
+  }
+
+  /* Alert popup — banner that drops down from top of radar */
+  .alert-banner {
+    position: absolute;
+    top: 12px; left: 50%;
+    transform: translateX(-50%) translateY(-200%);
+    background: rgba(40,0,0,0.92);
+    border: 2px solid #ff3b3b;
+    color: #ff5050;
+    padding: 12px 22px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    box-shadow: 0 0 20px rgba(255,59,59,0.6);
+    z-index: 50;
+    transition: transform 0.4s ease-out;
+    min-width: 320px;
+    max-width: 600px;
+  }
+  .alert-banner.show { transform: translateX(-50%) translateY(0); }
+  .alert-banner .ab-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    color: #ff3b3b;
+    letter-spacing: 3px;
+    margin-bottom: 6px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .alert-banner .ab-close {
+    background: transparent; border: none; color: #ff5050; font-size: 18px; cursor: pointer; padding: 0 4px;
+  }
+  .alert-banner .ab-row { display: flex; justify-content: space-between; gap: 14px; }
+  .alert-banner .ab-row b { color: #ffffff; }
+
   /* STATS */
   .stats {
-    padding: 18px 22px;
+    padding: 10px 14px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 8px;
   }
   .stats-title {
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 22px;
+    font-size: 16px;
     letter-spacing: 3px;
     color: var(--amber);
     border-bottom: 1px solid var(--line);
-    padding-bottom: 6px;
+    padding-bottom: 4px;
   }
   .stats-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 22px;
+    gap: 8px 12px;
   }
   .stat-box .k {
-    font-size: 9px;
-    letter-spacing: 3px;
+    font-size: 8px;
+    letter-spacing: 2px;
     color: var(--cream-dim);
-    margin-bottom: 4px;
+    margin-bottom: 1px;
   }
   .stat-box .v {
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 36px;
+    font-size: 24px;
     line-height: 1;
     color: var(--cream);
     letter-spacing: 1px;
   }
   .stat-box .v small {
-    font-size: 14px;
+    font-size: 11px;
     color: var(--cream-dim);
     letter-spacing: 2px;
-    margin-left: 4px;
+    margin-left: 3px;
   }
   .stat-box.accent .v { color: var(--amber); }
   .stat-mini {
-    margin-top: auto;
-    padding-top: 12px;
+    margin-top: 4px;
+    padding-top: 6px;
     border-top: 1px dashed var(--line);
-    font-size: 10px;
+    font-size: 9px;
     letter-spacing: 2px;
     color: var(--cream-dim);
     display: flex;
@@ -562,9 +694,14 @@
 
     <section class="strip">
       <div class="radar-section">
+        <div class="zoom-stack">
+          <button class="zoom-btn" id="zoomIn"  title="Zoom in (smaller range)">+</button>
+          <div class="zoom-readout" id="zoomReadout">--- NM</div>
+          <button class="zoom-btn" id="zoomOut" title="Zoom out (larger range)">−</button>
+        </div>
         <div class="radar-label">
           ZAB ARTCC — SECTOR 12
-          <small>RANGE 250 NM · SWEEP 6.0S · <span id="srcLabel">SOURCE: ---</span></small>
+          <small>RANGE <span id="rangeLabel">---</span> NM · SWEEP 6.0S · <span id="srcLabel">SOURCE: ---</span></small>
         </div>
         <div class="radar-legend">
           <div class="leg-item"><span class="leg-dot cruise"></span>CRUISE</div>
@@ -599,13 +736,9 @@
             <circle cx="500" cy="500" r="368"/>
             <circle cx="500" cy="500" r="460" stroke-width="1.5" opacity="0.85"/>
           </g>
-          <g font-family="JetBrains Mono, monospace" font-size="11" fill="var(--green-dim)" opacity="0.85">
-            <text x="505" y="416">50</text>
-            <text x="505" y="324">100</text>
-            <text x="505" y="232">150</text>
-            <text x="505" y="140">200</text>
-            <text x="505" y="48">250 NM</text>
-          </g>
+          <!-- Range tick labels — populated by app.js from current RANGE_NM -->
+          <g id="rangeTicks" font-family="JetBrains Mono, monospace" font-size="22"
+             fill="var(--amber)" font-weight="700" opacity="0.95"></g>
 
           <!-- Bearing spokes -->
           <g stroke="var(--radar-grid)" stroke-width="1" opacity="0.7">
@@ -656,22 +789,43 @@
 
         <!-- ATC TARGETS WITH FULL DATABLOCKS -->
         <div class="targets" id="targetsLayer"></div>
+
+        <!-- Proximity alert banner (auto-shown when aircraft enters alert ring) -->
+        <div class="alert-banner" id="alertBanner" role="alert" aria-live="assertive">
+          <div class="ab-title">
+            <span>◢ PROXIMITY ALERT</span>
+            <button class="ab-close" id="alertClose" title="Dismiss">×</button>
+          </div>
+          <div id="alertBody"></div>
+        </div>
       </div>
 
-      <aside class="stats">
-        <div class="stats-title">◢ STATION TELEMETRY</div>
-        <div class="stats-grid">
-          <div class="stat-box accent"><div class="k">TRACKED</div><div class="v" id="stTracked">--- <small>active</small></div></div>
-          <div class="stat-box"><div class="k">MILITARY</div><div class="v" id="stMil">--- <small>aircraft</small></div></div>
-          <div class="stat-box"><div class="k">MAX FL</div><div class="v" id="stMaxFl">---</div></div>
-          <div class="stat-box"><div class="k">MAX SPD</div><div class="v" id="stMaxSpd">--- <small>kts</small></div></div>
-        </div>
-        <div class="stat-mini">
-          <span>UPTIME <b id="stUptime">--- ---</b></span>
-          <span>RX <b class="blink">● NOMINAL</b></span>
-        </div>
-      </aside>
     </section>
+
+    <!-- Telemetry strip — horizontal, replaces the old right sidebar -->
+    <div class="stat-bar">
+      <div class="cell title">◢ TELEMETRY</div>
+      <div class="cell accent">
+        <span class="k">TRACKED</span>
+        <span class="v" id="stTracked">---</span>
+      </div>
+      <div class="cell">
+        <span class="k">MILITARY</span>
+        <span class="v" id="stMil">---</span>
+      </div>
+      <div class="cell">
+        <span class="k">MAX FL</span>
+        <span class="v" id="stMaxFl">---</span>
+      </div>
+      <div class="cell">
+        <span class="k">MAX SPD</span>
+        <span class="v" id="stMaxSpd">--- <small>kts</small></span>
+      </div>
+      <div class="cell">
+        <span class="k">UPTIME</span>
+        <span class="v" id="stUptime">---</span>
+      </div>
+    </div>
 
     <div class="subhead">
       <div>FLIGHT</div>

@@ -52,6 +52,19 @@ def project(lat: float, lon: float) -> tuple[float, float] | None:
     return (x_pct, y_pct)
 
 
+def distance_nm(lat: float, lon: float) -> float | None:
+    """Great-circle-ish distance from station to (lat, lon) in NM.
+    Same equirectangular approximation used for projection."""
+    if lat is None or lon is None:
+        return None
+    s_lat = settings.STATION_LAT
+    s_lon = settings.STATION_LON
+    nm_per_deg_lon = _NM_PER_DEG_LAT * math.cos(math.radians(s_lat))
+    dx_nm = (lon - s_lon) * nm_per_deg_lon
+    dy_nm = (lat - s_lat) * _NM_PER_DEG_LAT
+    return math.hypot(dx_nm, dy_nm)
+
+
 def project_history(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
     """Project a list of (lat, lon) points; drop any that fail."""
     out: list[tuple[float, float]] = []
