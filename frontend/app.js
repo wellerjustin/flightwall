@@ -17,7 +17,7 @@
   const POLL_MS = 2000;     // matches backend POLL_INTERVAL by default
   const CLOCK_MS = 1000;
   const STALE_MS = 30000;   // banner the connection if no good poll in 30s
-  const ALERT_NM = 10;      // proximity alert ring (NM from station)
+  let ALERT_NM = parseFloat(localStorage.getItem("fw_alert_nm")) || 10;  // proximity alert ring (NM)
 
   // DOM handles
   const $ = (id) => document.getElementById(id);
@@ -41,7 +41,8 @@
     modalCancel:$("settingsCancel"),
     modalSave: $("settingsSave"),
     setName:   $("setName"),
-    setCoords: $("setCoords"),
+    setCoords:  $("setCoords"),
+    setAlertNm: $("setAlertNm"),
     setRange:  $("setRange"),
     setSource: $("setSource"),
     zoomIn:    $("zoomIn"),
@@ -209,6 +210,7 @@
     const lon = station.lon ?? "";
     els.setCoords.value = (lat !== "" && lon !== "") ? `${lat}, ${lon}` : "";
     els.setRange.value = station.range_nm ?? 250;
+    if (els.setAlertNm) els.setAlertNm.value = ALERT_NM;
     els.setSource.value = station.source || "adsblol";
     els.modal.classList.add("open");
   }
@@ -248,6 +250,14 @@
     if (!isFinite(body.range_nm)) {
       alert("Range must be a valid number.");
       return;
+    }
+    // Save the alert ring locally — frontend-only setting.
+    if (els.setAlertNm) {
+      const v = parseFloat(els.setAlertNm.value);
+      if (isFinite(v) && v > 0) {
+        ALERT_NM = v;
+        localStorage.setItem("fw_alert_nm", String(v));
+      }
     }
     try {
       const r = await fetch("/api/station", {
@@ -289,48 +299,48 @@
   function phaseLabel(p) {
     return ({cruise:"CRUISE", climb:"CLIMB", descent:"DESCENT", local:"LOCAL"}[p] || "---");
   }
-  // Phase-based coloring: green climb, yellow descent, blue cruise/level, grey ground.
+  // Phase-based color — used for triangles, datablocks, flight list rows.
+  // Climb=green, descent=yellow, cruise=blue, ground/local=grey.
   function phaseColor(phase) {
-    if (phase === "climb")   return "#40ff80";  // green
-    if (phase === "descent") return "#ffd840";  // yellow
-    if (phase === "cruise")  return "#4aa8ff";  // blue
-    if (phase === "local")   return "#cccccc";  // grey-cream
+    if (phase === "climb")   return "#40ff80";
+    if (phase === "descent") return "#ffd840";
+    if (phase === "cruise")  return "#4aa8ff";
+    if (phase === "local")   return "#cccccc";
     return "#aaaaaa";
   }
-  // Backwards-compat alias used elsewhere in the file.
-  function altColor(altOrPhase) {
-    // If a phase string slipped in, use it directly.
-    if (typeof altOrPhase === "string") return phaseColor(altOrPhase);
-    return phaseColor("cruise");
-  }
-  // Derive a per-segment phase from a pair of altitudes (oldest, newest).
-  function segPhase(altOld, altNew) {
-    const a0 = typeof altOld === "number" ? altOld : null;
-    const a1 = typeof altNew === "number" ? altNew : null;
-    if (a0 === null || a1 === null) return "cruise";
-    const d = a1 - a0;
-    if (d > 100)  return "climb";
-    if (d < -100) return "descent";
-    return "cruise";
+
+  // Altitude-band color (ADSBexchange-style) — used for track polylines so
+  // each segment shows the altitude the aircraft was at when it traversed it.
+  function altColor(alt) {
+    if (alt === "ground" || (typeof alt === "number" && alt < 100)) return "#888";
+    const a = (typeof alt === "number") ? alt : 0;
+    if (a < 2000)  return "#ffe600";  // yellow
+    if (a < 10000) return "#ff8c00";  // orange
+    if (a < 20000) return "#40ff80";  // green
+    if (a < 30000) return "#40c0ff";  // cyan-blue
+    if (a < 40000) return "#9060ff";  // purple
+    return "#ff60d0";                 // pink (FL400+)
   }
 
-  // Phase icons. SVG so they line up cleanly and inherit phase color via currentColor.
-  // Resolves: climb / descent / cruise (level) / ground.
+  // Phase icons — clean 45° arrows. Climb = up-right, descent = down-right, cruise = horizontal, ground = grounded silhouette.
   function phaseIcon(a) {
-    // "ground" overrides phase if alt is 0/missing AND speed is low
     const onGround = (a.alt === "ground") || (typeof a.alt === "number" && a.alt < 100 && (a.gs ?? 999) < 50);
     const phase = onGround ? "ground" : a.phase;
-    const stroke = "currentColor";
-    const sw = 1.8;
+    const c = "currentColor";
+    const sw = 2.0;
     const ICONS = {
-      climb:   `<polyline points="2,12 7,4 11,8 15,2" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/><polyline points="11,2 15,2 15,6" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>`,
-      descent: `<polyline points="2,4 7,12 11,8 15,14" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/><polyline points="11,14 15,14 15,10" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>`,
-      cruise:  `<line x1="2" y1="8" x2="14" y2="8" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/><polygon points="14,8 11,5 11,11" fill="${stroke}"/>`,
-      local:   `<line x1="2" y1="8" x2="14" y2="8" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/><polygon points="14,8 11,5 11,11" fill="${stroke}"/>`,
-      ground:  `<rect x="2" y="11" width="12" height="2" fill="${stroke}"/><polygon points="3,9 13,9 11,4 5,4" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>`,
+      // 45° up arrow with arrowhead
+      climb:   `<line x1="2" y1="14" x2="13" y2="3" stroke="${c}" stroke-width="${sw}" stroke-linecap="round"/><polyline points="13,9 13,3 7,3" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round"/>`,
+      // 45° down arrow with arrowhead
+      descent: `<line x1="2" y1="3" x2="13" y2="14" stroke="${c}" stroke-width="${sw}" stroke-linecap="round"/><polyline points="13,8 13,14 7,14" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round"/>`,
+      // Horizontal arrow
+      cruise:  `<line x1="2" y1="8" x2="13" y2="8" stroke="${c}" stroke-width="${sw}" stroke-linecap="round"/><polyline points="9,4 13,8 9,12" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round"/>`,
+      local:   `<line x1="2" y1="8" x2="13" y2="8" stroke="${c}" stroke-width="${sw}" stroke-linecap="round"/><polyline points="9,4 13,8 9,12" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round"/>`,
+      // Aircraft on ground
+      ground:  `<line x1="2" y1="13" x2="14" y2="13" stroke="${c}" stroke-width="${sw}" stroke-linecap="round"/><polygon points="3,11 13,11 11,5 5,5" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linejoin="round"/>`,
     };
     const path = ICONS[phase] || ICONS.cruise;
-    return `<svg viewBox="0 0 16 16" width="16" height="16" style="vertical-align:middle">${path}</svg>`;
+    return `<svg viewBox="0 0 16 16" width="16" height="16">${path}</svg>`;
   }
   function classLabel(k) { return k === "mil" ? "MIL" : "CIV"; }
 
@@ -412,10 +422,10 @@
       const h = a.history;
       for (let i = 1; i < h.length; i++) {
         const p0 = h[i - 1], p1 = h[i];
-        const altOld = (p0.length >= 3) ? p0[2] : null;
-        const altNew = (p1.length >= 3) ? p1[2] : null;
-        const phase = segPhase(altOld, altNew);
-        const stroke = phaseColor(phase);
+        // Color each segment by the altitude at the *leading* point (older end)
+        // so the trail records the altitude history visually.
+        const altAt = (p0.length >= 3 && p0[2] != null) ? p0[2] : a.alt;
+        const stroke = altColor(altAt);
         const seg = document.createElementNS(SVG_NS, "line");
         seg.setAttribute("x1", p0[0].toFixed(2));
         seg.setAttribute("y1", p0[1].toFixed(2));
@@ -452,12 +462,12 @@
       const dist   = (typeof a.dist_nm === "number") ? `${a.dist_nm.toFixed(1)}<span class="u"> NM</span>` : "---";
       row.innerHTML = `
         <div class="col-flight">${a.callsign}</div>
+        <div class="status ${a.phase}"><span class="phase-ico">${phaseIcon(a)}</span>${phaseLabel(a.phase)}</div>
         <div class="col-route">${dist}</div>
         <div class="col-alt">${fmtAltCommas(a.alt)}<span class="u">FT</span></div>
         <div class="col-spd">${fmtSpd(a.gs)}<span class="u">KT</span></div>
         <div class="col-type">${opType} · ${a.reg || "---"}</div>
         <div class="col-class ${a.klass === "mil" ? "mil" : ""}">${classLabel(a.klass)}</div>
-        <div class="status ${a.phase}"><span class="phase-ico">${phaseIcon(a)}</span>${phaseLabel(a.phase)}</div>
       `;
       frag.appendChild(row);
     }
