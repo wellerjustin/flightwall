@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FlightWall — DEPARTURES + ATC RADAR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --board: #141414;
+    --row: #1a1a1a;
+    --cream: #f4ead5;
+    --cream-dim: #998f7e;
+    --amber: #ffb627;
+    --rust: #c44536;
+    --teal: #2a9d8f;
+    --line: #2a2a2a;
+
+    --radar-bg: #04130a;
+    --radar-grid: #0d3a1f;
+    --radar-line: #1a6b3a;
+    --green: #4dff88;
+    --green-bright: #b6ffcb;
+    --green-dim: #2a8a4a;
+    --green-glow: rgba(77, 255, 136, 0.55);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100vh; overflow: hidden;
+    background: var(--bg);
+    color: var(--cream);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at top, rgba(255,182,39,0.06), transparent 60%);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .layout {
+    position: relative; z-index: 2;
+    height: 100vh;
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+  }
+
+  /* MASTHEAD */
+  .masthead {
+    padding: 8px 32px 6px;
+    border-bottom: 2px solid var(--cream);
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 24px;
+  }
+  .brand-l { font-size: 11px; letter-spacing: 4px; color: var(--cream-dim); }
+  .brand-l b { color: var(--cream); }
+  .brand-c {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px;
+    line-height: 0.9;
+    letter-spacing: 2px;
+    color: var(--cream);
+    text-align: center;
+  }
+  .brand-c .sub {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 4px;
+    color: var(--cream-dim);
+    margin-top: 4px;
+  }
+  .brand-c em { font-style: normal; color: var(--amber); }
+  .brand-r {
+    text-align: right;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--cream-dim);
+  }
+  .brand-r b { display: block; }
+  .brand-r-wrap > div { line-height: 1.4; }
+  .brand-r b { color: var(--cream); display:block; font-size: 18px; font-family:'Bebas Neue'; letter-spacing:2px;}
+  .brand-r-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+  }
+  /* Settings gear button (Carbon icon) */
+  .gear-btn {
+    background: transparent;
+    border: 1px solid var(--cream-dim);
+    color: var(--cream-dim);
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    padding: 0;
+  }
+  .gear-btn:hover {
+    color: var(--amber);
+    border-color: var(--amber);
+    background: rgba(255,182,39,0.08);
+  }
+  .gear-btn svg { width: 20px; height: 20px; display: block; }
+
+  /* Settings modal */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(2px);
+    z-index: 100;
+    display: none;
+    align-items: center; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--bg);
+    border: 2px solid var(--cream);
+    width: 460px;
+    max-width: 90vw;
+    color: var(--cream);
+  }
+  .modal-head {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--board);
+  }
+  .modal-head h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 24px;
+    letter-spacing: 3px;
+    color: var(--amber);
+    font-weight: normal;
+    margin: 0;
+  }
+  .modal-close {
+    background: transparent;
+    border: none;
+    color: var(--cream-dim);
+    font-size: 24px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+  }
+  .modal-close:hover { color: var(--cream); }
+  .modal-body { padding: 22px 24px; }
+  .field {
+    margin-bottom: 16px;
+  }
+  .field label {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--cream-dim);
+    margin-bottom: 6px;
+  }
+  .field input {
+    width: 100%;
+    background: var(--board);
+    border: 1px solid var(--line);
+    color: var(--cream);
+    padding: 9px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    letter-spacing: 1px;
+  }
+  .field input:focus {
+    outline: none;
+    border-color: var(--amber);
+  }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .modal-foot {
+    padding: 14px 24px;
+    border-top: 1px solid var(--line);
+    background: var(--board);
+    display: flex; justify-content: flex-end; gap: 10px;
+  }
+  .btn {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 16px;
+    letter-spacing: 3px;
+    padding: 8px 18px;
+    border: 1px solid var(--cream);
+    background: transparent;
+    color: var(--cream);
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--cream); color: var(--bg); }
+  .btn.primary { background: var(--amber); border-color: var(--amber); color: var(--bg); }
+  .btn.primary:hover { background: var(--cream); border-color: var(--cream); }
+  .modal-note {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--cream-dim);
+    margin-top: 4px;
+    line-height: 1.4;
+  }
+
+  /* RADAR + STATS STRIP */
+  .strip {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    border-bottom: 2px solid var(--cream);
+    background: var(--board);
+    height: 46vh;
+    min-height: 360px;
+  }
+  .radar-section {
+    position: relative;
+    overflow: hidden;
+    border-right: 1px solid var(--line);
+    background: var(--radar-bg);
+  }
+  .radar-label {
+    position: absolute;
+    top: 12px; left: 18px;
+    z-index: 6;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 3px;
+    color: var(--green-bright);
+    text-shadow: 0 0 6px var(--green-glow);
+  }
+  .radar-label small {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--green-dim);
+    margin-top: 2px;
+  }
+  .radar-legend {
+    position: absolute;
+    top: 12px; right: 18px;
+    z-index: 6;
+    display: flex;
+    gap: 18px;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--green-dim);
+  }
+  .leg-item { display: flex; align-items: center; gap: 6px; }
+  .leg-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .leg-dot.cruise { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+  .leg-dot.climb { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .leg-dot.descent { background: var(--rust); box-shadow: 0 0 6px var(--rust); }
+  .leg-dot.local { background: var(--cream); box-shadow: 0 0 6px var(--cream); }
+
+  .radar-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .compass {
+    position: absolute;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 14px;
+    color: var(--green-dim);
+    letter-spacing: 2px;
+    z-index: 4;
+  }
+  .c-n { top: 38px; left: 50%; transform: translateX(-50%); }
+  .c-s { bottom: 8px; left: 50%; transform: translateX(-50%); }
+  .c-e { right: 12px; top: 50%; transform: translateY(-50%); }
+  .c-w { left: 12px; top: 50%; transform: translateY(-50%); }
+
+  .sweep-wrap {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 3;
+  }
+  .sweep {
+    position: absolute;
+    width: 50%; height: 2px;
+    top: 50%; left: 50%;
+    transform-origin: left center;
+    background: linear-gradient(90deg, var(--green-bright) 0%, transparent 100%);
+    box-shadow: 0 0 12px var(--green-glow);
+    animation: sweep 6s linear infinite;
+  }
+  @keyframes sweep { to { transform: rotate(360deg); } }
+
+  /* TARGET + DATABLOCK */
+  .targets {
+    position: absolute; inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .target {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    color: var(--green-bright);
+    text-shadow: 0 0 4px var(--green-glow);
+  }
+  /* position symbol — small SVG sits at the exact target center */
+  .target .sym {
+    position: absolute;
+    top: 0; left: 0;
+    transform: translate(-50%, -50%);
+    width: 14px; height: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .target .sym svg { width: 100%; height: 100%; overflow: visible; }
+  /* TRACK LINES — actual recent flight path drawn in the radar SVG */
+  .track-svg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    z-index: 4;
+    pointer-events: none;
+  }
+  .track-svg polyline {
+    fill: none;
+    stroke-width: 0.75;
+    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.75;
+  }
+  .track-svg .tk-cruise  { stroke: var(--teal); }
+  .track-svg .tk-climb   { stroke: var(--amber); }
+  .track-svg .tk-descent { stroke: var(--rust); }
+  .track-svg .tk-local   { stroke: var(--cream); }
+  /* leader line — short stick from target to datablock */
+  .target .leader {
+    position: absolute;
+    top: 0; left: 0;
+    width: 1px; height: 26px;
+    background: var(--green);
+    box-shadow: 0 0 3px var(--green-glow);
+    transform-origin: top left;
+  }
+  /* datablock — 3-line text, FAA STARS-style */
+  .target .db {
+    position: absolute;
+    font-size: 11px;
+    line-height: 1.25;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    color: var(--green-bright);
+    text-shadow: 0 0 4px var(--green-glow);
+    background: rgba(4, 19, 10, 0.55);
+    padding: 1px 4px;
+  }
+  .target .db .l1 { font-weight: 700; }
+  .target .db .l2 { color: var(--green); }
+  .target .db .l3 { color: var(--green-dim); font-size: 10px; }
+  .target .db .arrow {
+    color: var(--green); font-weight: 700;
+    margin: 0 2px;
+  }
+
+  /* color overrides by phase — these match the legend dots */
+  .target.cruise   { color: var(--teal); }
+  .target.cruise   .leader { background: var(--teal); box-shadow: 0 0 3px var(--teal); }
+  .target.cruise   .db { color: var(--teal); text-shadow: 0 0 4px var(--teal); }
+
+  .target.climb    { color: var(--amber); }
+  .target.climb    .leader { background: var(--amber); box-shadow: 0 0 3px var(--amber); }
+  .target.climb    .db { color: var(--amber); text-shadow: 0 0 4px var(--amber); }
+
+  .target.descent  { color: var(--rust); }
+  .target.descent  .leader { background: var(--rust); box-shadow: 0 0 3px var(--rust); }
+  .target.descent  .db { color: var(--rust); text-shadow: 0 0 4px var(--rust); }
+
+  .target.local    { color: var(--cream); }
+  .target.local    .leader { background: var(--cream); box-shadow: 0 0 3px var(--cream); }
+  .target.local    .db { color: var(--cream); text-shadow: 0 0 4px var(--cream); }
+
+  /* military emergency style — outlined box around datablock */
+  .target.mil .db {
+    border: 1px solid currentColor;
+    padding: 2px 5px;
+  }
+
+  /* STATS */
+  .stats {
+    padding: 18px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .stats-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 3px;
+    color: var(--amber);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+  .stat-box .k {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--cream-dim);
+    margin-bottom: 4px;
+  }
+  .stat-box .v {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px;
+    line-height: 1;
+    color: var(--cream);
+    letter-spacing: 1px;
+  }
+  .stat-box .v small {
+    font-size: 14px;
+    color: var(--cream-dim);
+    letter-spacing: 2px;
+    margin-left: 4px;
+  }
+  .stat-box.accent .v { color: var(--amber); }
+  .stat-mini {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--cream-dim);
+    display: flex;
+    justify-content: space-between;
+  }
+  .stat-mini b { color: var(--cream); }
+
+  /* SUBHEAD */
+  .subhead {
+    display: grid;
+    grid-template-columns: 90px 130px 100px 100px 1fr 60px 100px;
+    gap: 16px;
+    padding: 6px 32px;
+    background: var(--board);
+    border-bottom: 1px solid var(--line);
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--amber);
+  }
+
+  /* BOARD */
+  .board { overflow-y: auto; padding: 0 32px; }
+  .row {
+    display: grid;
+    grid-template-columns: 90px 130px 100px 100px 1fr 60px 100px;
+    gap: 16px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: center;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    letter-spacing: 1px;
+    line-height: 1;
+  }
+  .row:hover { background: var(--row); }
+  .col-flight { color: var(--amber); }
+  .col-route { color: var(--cream); }
+  .col-route .arrow {
+    color: var(--cream-dim);
+    margin: 0 5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    vertical-align: 2px;
+  }
+  .col-alt, .col-spd { color: var(--cream); }
+  .col-alt .u, .col-spd .u {
+    color: var(--cream-dim);
+    font-size: 11px;
+    margin-left: 3px;
+    letter-spacing: 2px;
+  }
+  .col-type { color: var(--cream-dim); font-size: 16px; }
+  .col-class {
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-align: center;
+    padding: 2px 0;
+    border: 1px solid var(--cream-dim);
+    color: var(--cream-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+  }
+  .col-class.mil {
+    color: var(--rust);
+    border-color: var(--rust);
+  }
+  .status {
+    font-size: 13px;
+    letter-spacing: 2px;
+    padding: 3px 6px;
+    text-align: center;
+    border: 1px solid var(--cream);
+  }
+  .status.cruise { color: var(--teal); border-color: var(--teal); }
+  .status.climb { color: var(--amber); border-color: var(--amber); }
+  .status.descent { color: var(--rust); border-color: var(--rust); }
+  .status.local { color: var(--bg); border-color: var(--cream); background: var(--cream); }
+
+  /* TICKER */
+  .ticker {
+    background: var(--cream);
+    color: var(--bg);
+    padding: 10px 32px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    letter-spacing: 2px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 2px solid var(--cream);
+  }
+  .ticker .pill {
+    background: var(--bg);
+    color: var(--cream);
+    padding: 2px 10px;
+    font-size: 13px;
+    letter-spacing: 3px;
+    margin-right: 12px;
+  }
+  .ticker .group { display: flex; align-items: center; gap: 8px; }
+  .ticker .group + .group { padding-left: 24px; border-left: 1px solid var(--bg); }
+  .blink { animation: blink 1.4s infinite; }
+  @keyframes blink { 50% { opacity: 0.3; } }
+</style>
+</head>
+<body>
+  <div class="layout">
+
+    <header class="masthead">
+      <div class="brand-l">
+        <b>FLIGHTWALL</b> · CONCHO ARIZONA · ELEV 5896FT
+      </div>
+      <div class="brand-c">FLIGHT<em>WALL</em><span class="sub" id="brandSub">LIVE 1090MHZ ADS-B FEED</span></div>
+      <div class="brand-r">
+        <div class="brand-r-wrap">
+          <div>
+            <b id="clock">--:-- ---</b>
+            <span id="brandStation">KP13 · 34.4612°N · 109.6052°W</span>
+          </div>
+          <button class="gear-btn" id="gearBtn" title="Settings" aria-label="Settings">
+            <!-- Carbon: settings (gear) -->
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="currentColor">
+              <path d="M27 16.76v-1.53l1.92-1.68A2 2 0 0 0 29.3 11l-2.36-4a2 2 0 0 0-1.73-1 2 2 0 0 0-.64.1l-2.43.82a11.4 11.4 0 0 0-1.31-.75l-.51-2.51a2 2 0 0 0-2-1.61h-4.68a2 2 0 0 0-2 1.61l-.51 2.5a11.5 11.5 0 0 0-1.32.76l-2.38-.86A2 2 0 0 0 6.79 6a2 2 0 0 0-1.73 1L2.7 11a2 2 0 0 0 .41 2.51L5 15.24v1.53l-1.89 1.68A2 2 0 0 0 2.7 21l2.36 4a2 2 0 0 0 1.73 1 2 2 0 0 0 .64-.1l2.43-.82a11.4 11.4 0 0 0 1.31.75l.51 2.51a2 2 0 0 0 2 1.61h4.72a2 2 0 0 0 2-1.61l.51-2.5a11.5 11.5 0 0 0 1.32-.76l2.42.82a2 2 0 0 0 .64.1 2 2 0 0 0 1.73-1l2.28-4a2 2 0 0 0-.41-2.51zM25.21 24l-3.43-1.16a8.9 8.9 0 0 1-2.71 1.57L18.36 28h-4.72l-.71-3.55a9 9 0 0 1-2.7-1.57L6.79 24l-2.36-4 2.72-2.4a8.9 8.9 0 0 1 0-3.13L4.43 12l2.36-4 3.43 1.16a8.9 8.9 0 0 1 2.71-1.57L13.64 4h4.72l.71 3.55a9 9 0 0 1 2.7 1.57L25.21 8l2.36 4-2.72 2.4a8.9 8.9 0 0 1 0 3.13L27.57 20z"/>
+              <path d="M16 22a6 6 0 1 1 6-6 6 6 0 0 1-6 6m0-10a4 4 0 1 0 4 4 4 4 0 0 0-4-4"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <section class="strip">
+      <div class="radar-section">
+        <div class="radar-label">
+          ZAB ARTCC — SECTOR 12
+          <small>RANGE 250 NM · SWEEP 6.0S · <span id="srcLabel">SOURCE: ---</span></small>
+        </div>
+        <div class="radar-legend">
+          <div class="leg-item"><span class="leg-dot cruise"></span>CRUISE</div>
+          <div class="leg-item"><span class="leg-dot climb"></span>CLIMB</div>
+          <div class="leg-item"><span class="leg-dot descent"></span>DESCENT</div>
+          <div class="leg-item"><span class="leg-dot local"></span>LOCAL</div>
+        </div>
+
+        <div class="compass c-n">N · 360°</div>
+        <div class="compass c-s">S · 180°</div>
+        <div class="compass c-e">E · 090°</div>
+        <div class="compass c-w">W · 270°</div>
+
+        <svg class="radar-svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <radialGradient id="radarGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#0a2a17" stop-opacity="0.6"/>
+              <stop offset="100%" stop-color="#04130a" stop-opacity="0"/>
+            </radialGradient>
+            <pattern id="hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+              <line x1="0" y1="0" x2="0" y2="6" stroke="var(--rust)" stroke-width="1.2" opacity="0.4"/>
+            </pattern>
+          </defs>
+
+          <circle cx="500" cy="500" r="460" fill="url(#radarGlow)"/>
+
+          <!-- Range rings -->
+          <g fill="none" stroke="var(--radar-line)" stroke-width="1" opacity="0.55">
+            <circle cx="500" cy="500" r="92"/>
+            <circle cx="500" cy="500" r="184"/>
+            <circle cx="500" cy="500" r="276"/>
+            <circle cx="500" cy="500" r="368"/>
+            <circle cx="500" cy="500" r="460" stroke-width="1.5" opacity="0.85"/>
+          </g>
+          <g font-family="JetBrains Mono, monospace" font-size="11" fill="var(--green-dim)" opacity="0.85">
+            <text x="505" y="416">50</text>
+            <text x="505" y="324">100</text>
+            <text x="505" y="232">150</text>
+            <text x="505" y="140">200</text>
+            <text x="505" y="48">250 NM</text>
+          </g>
+
+          <!-- Bearing spokes -->
+          <g stroke="var(--radar-grid)" stroke-width="1" opacity="0.7">
+            <line x1="500" y1="40"  x2="500" y2="960"/>
+            <line x1="40"  y1="500" x2="960" y2="500"/>
+            <line x1="270" y1="102" x2="730" y2="898"/>
+            <line x1="730" y1="102" x2="270" y2="898"/>
+            <line x1="102" y1="270" x2="898" y2="730"/>
+            <line x1="102" y1="730" x2="898" y2="270"/>
+          </g>
+          <g font-family="JetBrains Mono, monospace" font-size="10" fill="var(--green-dim)" text-anchor="middle">
+            <text x="730" y="98">030</text>
+            <text x="902" y="278">060</text>
+            <text x="902" y="730">120</text>
+            <text x="730" y="912">150</text>
+            <text x="270" y="912">210</text>
+            <text x="98"  y="730">240</text>
+            <text x="98"  y="278">300</text>
+            <text x="270" y="98">330</text>
+          </g>
+
+          <!-- Landmarks — drawn dynamically by app.js from /api/landmarks (lat/lon projected) -->
+          <g id="landmarkLayer"></g>
+
+          <!-- Crosshairs -->
+          <g stroke="var(--green-dim)" stroke-width="1" opacity="0.55">
+            <line x1="40"  y1="500" x2="960" y2="500"/>
+            <line x1="500" y1="40"  x2="500" y2="960"/>
+          </g>
+
+          <!-- Center station -->
+          <g>
+            <circle cx="500" cy="500" r="6" fill="var(--bg)" stroke="var(--green-bright)" stroke-width="2"/>
+            <circle cx="500" cy="500" r="2" fill="var(--green-bright)"/>
+            <text x="514" y="496" font-family="Bebas Neue, sans-serif" font-size="16"
+                  fill="var(--green-bright)" letter-spacing="2">KP13</text>
+          </g>
+        </svg>
+
+        <div class="sweep-wrap"><div class="sweep"></div></div>
+
+        <!-- TRACK LINES — recent flight path for each target.
+             Coordinates are percentages of the radar-section box, matching
+             the % positions of each .target below. Endpoint of each polyline
+             is the target's current position. -->
+        <svg class="track-svg" id="trackSvg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+
+
+        <!-- ATC TARGETS WITH FULL DATABLOCKS -->
+        <div class="targets" id="targetsLayer"></div>
+      </div>
+
+      <aside class="stats">
+        <div class="stats-title">◢ STATION TELEMETRY</div>
+        <div class="stats-grid">
+          <div class="stat-box accent"><div class="k">TRACKED</div><div class="v" id="stTracked">--- <small>active</small></div></div>
+          <div class="stat-box"><div class="k">MILITARY</div><div class="v" id="stMil">--- <small>aircraft</small></div></div>
+          <div class="stat-box"><div class="k">MAX FL</div><div class="v" id="stMaxFl">---</div></div>
+          <div class="stat-box"><div class="k">MAX SPD</div><div class="v" id="stMaxSpd">--- <small>kts</small></div></div>
+        </div>
+        <div class="stat-mini">
+          <span>UPTIME <b id="stUptime">--- ---</b></span>
+          <span>RX <b class="blink">● NOMINAL</b></span>
+        </div>
+      </aside>
+    </section>
+
+    <div class="subhead">
+      <div>FLIGHT</div>
+      <div>ROUTE</div>
+      <div>ALT</div>
+      <div>SPEED</div>
+      <div>TYPE</div>
+      <div>CLASS</div>
+      <div>PHASE</div>
+    </div>
+
+    <main class="board" id="board"></main>
+
+    <div class="ticker">
+      <div class="group"><span class="pill">TRK</span><span id="tkTracked">--- ACTIVE</span></div>
+      <div class="group"><span class="pill">MIL</span><span id="tkMil">--- ACTIVE</span></div>
+      <div class="group"><span class="pill">RNG</span><span>250 NM</span></div>
+      <div class="group"><span class="pill">SIG</span><span class="blink">● NOMINAL</span></div>
+      <div class="group" style="margin-left:auto;"><span id="tkUptime">UPTIME ---</span></div>
+    </div>
+
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal" role="dialog" aria-labelledby="settingsTitle">
+      <div class="modal-head">
+        <h2 id="settingsTitle">◢ STATION SETTINGS</h2>
+        <button class="modal-close" id="settingsClose" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="setName">STATION NAME</label>
+          <input type="text" id="setName" placeholder="KP13" maxlength="8">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="setLat">LATITUDE</label>
+            <input type="number" id="setLat" step="0.0001" placeholder="34.4612">
+          </div>
+          <div class="field">
+            <label for="setLon">LONGITUDE</label>
+            <input type="number" id="setLon" step="0.0001" placeholder="-109.6052">
+          </div>
+        </div>
+        <div class="field">
+          <label for="setRange">RANGE (NM)</label>
+          <input type="number" id="setRange" step="10" min="10" max="250" placeholder="250">
+        </div>
+        <div class="field">
+          <label for="setSource">DATA SOURCE</label>
+          <input type="text" id="setSource" readonly placeholder="adsblol">
+          <div class="modal-note">Set with the FW_SOURCE environment variable. Restart the backend to change.</div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="settingsCancel">CANCEL</button>
+        <button class="btn primary" id="settingsSave">SAVE</button>
+      </div>
+    </div>
+  </div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+[Unit]
+Description=FlightWall backend (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flightwall
+WorkingDirectory=/home/flightwall/flightwall
+Environment="PYTHONUNBUFFERED=1"
+# Edit these or move them into /etc/flightwall.env and use EnvironmentFile=
+Environment="FW_SOURCE=adsblol"
+Environment="FW_STATION_LAT=34.579211"
+Environment="FW_STATION_LON=-109.619175"
+Environment="FW_STATION_NAME=KP13"
+Environment="FW_RANGE_NM=50"
+Environment="FW_MAX_AIRCRAFT=20"
+ExecStart=/home/flightwall/flightwall/backend/.venv/bin/uvicorn backend.app:app --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
