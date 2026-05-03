@@ -107,6 +107,28 @@
     border-color: var(--amber);
     background: rgba(255,182,39,0.08);
   }
+  /* Track + Data + Alert toggle buttons — wider for labels, two states */
+  .track-toggle, .data-toggle, .alert-toggle { width: auto; padding: 0 10px; }
+  .track-toggle.on  { color: #4aa8ff; border-color: #4aa8ff; background: rgba(74,168,255,0.10); }
+  .track-toggle.on:hover  { background: rgba(74,168,255,0.20); }
+  .track-toggle.off { color: var(--cream-dim); border-color: var(--cream-dim); background: transparent; opacity: 0.55; }
+  .track-toggle.off:hover { color: var(--cream); border-color: var(--cream); }
+  .data-toggle.on  { color: var(--green-bright); border-color: var(--green-bright); background: rgba(116,255,150,0.10); }
+  .data-toggle.on:hover  { background: rgba(116,255,150,0.20); }
+  .data-toggle.off { color: var(--cream-dim); border-color: var(--cream-dim); background: transparent; opacity: 0.55; }
+  .data-toggle.off:hover { color: var(--cream); border-color: var(--cream); }
+
+  /* When data is off, hide all datablocks except for the explicitly selected one. */
+  .targets.data-off .target .db { display: none; }
+  .targets.data-off .target.selected .db { display: block; }
+  /* Selected target gets a brighter ring around the symbol so you know which one is showing data. */
+  .target.selected .sym svg polygon { stroke-width: 2.4; filter: drop-shadow(0 0 4px currentColor); }
+  .target { cursor: pointer; }
+
+  .alert-toggle.on  { color: #ff5050; border-color: #ff3b3b; background: rgba(255,59,59,0.10); }
+  .alert-toggle.on:hover  { background: rgba(255,59,59,0.20); }
+  .alert-toggle.off { color: var(--cream-dim); border-color: var(--cream-dim); background: transparent; opacity: 0.55; }
+  .alert-toggle.off:hover { color: var(--cream); border-color: var(--cream); }
   .gear-btn svg { width: 20px; height: 20px; display: block; }
 
   /* Zoom controls — sit at the top-right of the radar */
@@ -366,6 +388,7 @@
     background: linear-gradient(90deg, var(--green-bright) 0%, transparent 100%);
     box-shadow: 0 0 12px var(--green-glow);
     animation: sweep 6s linear infinite;
+    opacity: 0.2;
   }
   @keyframes sweep { to { transform: rotate(360deg); } }
 
@@ -406,10 +429,7 @@
     stroke-linejoin: round;
     opacity: 0.75;
   }
-  .track-svg .tk-cruise  { stroke: var(--teal); }
-  .track-svg .tk-climb   { stroke: var(--amber); }
-  .track-svg .tk-descent { stroke: var(--rust); }
-  .track-svg .tk-local   { stroke: var(--cream); }
+  /* Track polylines stroke color is set inline (altitude-based, ADSBexchange-style). */
   /* leader line — short stick from target to datablock */
   .target .leader {
     position: absolute;
@@ -639,6 +659,7 @@
   .status.climb { color: var(--amber); border-color: var(--amber); }
   .status.descent { color: var(--rust); border-color: var(--rust); }
   .status.local { color: var(--bg); border-color: var(--cream); background: var(--cream); }
+  .status .phase-ico { display: inline-flex; margin-right: 6px; vertical-align: -3px; }
 
   /* TICKER */
   .ticker {
@@ -681,6 +702,15 @@
             <b id="clock">--:-- ---</b>
             <span id="brandStation">KP13 · 34.4612°N · 109.6052°W</span>
           </div>
+          <button class="gear-btn track-toggle on" id="trackToggle" title="Toggle tracks" aria-label="Toggle tracks">
+            <span style="font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:2px;line-height:1">TRACK</span>
+          </button>
+          <button class="gear-btn data-toggle on" id="dataToggle" title="Toggle datablocks" aria-label="Toggle datablocks">
+            <span style="font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:2px;line-height:1">DATA</span>
+          </button>
+          <button class="gear-btn alert-toggle on" id="alertToggle" title="Toggle proximity alerts" aria-label="Toggle proximity alerts">
+            <span style="font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:2px;line-height:1">ALERT</span>
+          </button>
           <button class="gear-btn" id="gearBtn" title="Settings" aria-label="Settings">
             <!-- Carbon: settings (gear) -->
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="currentColor">
@@ -760,6 +790,9 @@
             <text x="270" y="98">330</text>
           </g>
 
+          <!-- Runway rectangles — drawn when zoomed ≤ 5 NM, from /api/runways/{icao} -->
+          <g id="runwayLayer"></g>
+
           <!-- Landmarks — drawn dynamically by app.js from /api/landmarks (lat/lon projected) -->
           <g id="landmarkLayer"></g>
 
@@ -829,7 +862,7 @@
 
     <div class="subhead">
       <div>FLIGHT</div>
-      <div>ROUTE</div>
+      <div>DIST</div>
       <div>ALT</div>
       <div>SPEED</div>
       <div>TYPE</div>
@@ -861,15 +894,9 @@
           <label for="setName">STATION NAME</label>
           <input type="text" id="setName" placeholder="KP13" maxlength="8">
         </div>
-        <div class="field-row">
-          <div class="field">
-            <label for="setLat">LATITUDE</label>
-            <input type="number" id="setLat" step="0.0001" placeholder="34.4612">
-          </div>
-          <div class="field">
-            <label for="setLon">LONGITUDE</label>
-            <input type="number" id="setLon" step="0.0001" placeholder="-109.6052">
-          </div>
+        <div class="field">
+          <label for="setCoords">COORDINATES <small style="color:var(--cream-dim);font-weight:400;letter-spacing:1px">(paste from Google Maps — e.g. 34.579211, -109.619175)</small></label>
+          <input type="text" id="setCoords" placeholder="34.579211, -109.619175">
         </div>
         <div class="field">
           <label for="setRange">RANGE (NM)</label>

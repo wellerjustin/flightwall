@@ -23,7 +23,8 @@ from .config import settings
 from .sources import make_source
 from .services.tracker import Tracker
 from .services.enricher import enrich
-from .services.projector import project, project_history, distance_nm
+from .services.projector import project, project_history, distance_nm, bearing_deg
+from .services import airports as airports_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("flightwall")
@@ -143,29 +144,43 @@ async def update_station(update: StationUpdate) -> dict:
     return _station_dict()
 
 
-# Real-world landmarks within ~50 NM of KP13 / Concho. Projected at request time
-# so they re-scale automatically when the user changes range.
-LANDMARKS: list[dict] = [
-    {"id": "KSJN", "name": "ST JOHNS",      "lat": 34.5187, "lon": -109.3792, "kind": "airport"},
-    {"id": "KSOW", "name": "SHOW LOW",      "lat": 34.2655, "lon": -110.0055, "kind": "airport"},
-    {"id": "KSNH", "name": "SNOWFLAKE",     "lat": 34.5159, "lon": -110.0793, "kind": "airport"},
-    {"id": "KJTC", "name": "SPRINGERVILLE", "lat": 34.1296, "lon": -109.3093, "kind": "airport"},
-    {"id": "KP10", "name": "HOLBROOK",      "lat": 34.9430, "lon": -110.1383, "kind": "airport"},
-    {"id": "PEFO", "name": "PETRIFIED FRST","lat": 34.8235, "lon": -109.8836, "kind": "park"},
-]
-
-
 @app.get("/api/landmarks")
 async def landmarks() -> dict:
-    """Static landmarks projected to current radar coordinates.
-    Re-fetched by the frontend when the station/range changes."""
+    """Airports near the current station, dynamically queried from
+    the OurAirports dataset. Re-fetched by the frontend whenever the
+    station/range changes."""
+    nearby = airports_db.nearby(
+        settings.STATION_LAT, settings.STATION_LON, settings.RANGE_NM
+    )
     out = []
-    for lm in LANDMARKS:
-        pos = project(lm["lat"], lm["lon"])
+    for ap in nearby:
+        pos = project(ap["lat"], ap["lon"])
         if pos is None:
             continue
-        out.append({**lm, "x": pos[0], "y": pos[1]})
-    return {"landmarks": out}
+        b = bearing_deg(ap["lat"], ap["lon"])
+        out.append({
+            **ap,
+            "x": pos[0], "y": pos[1],
+            "bearing_deg": round(b, 1) if b is not None else None,
+        })
+    return {"landmarks": out, "range_nm": settings.RANGE_NM}
+
+
+@app.get("/api/runways/{icao}")
+async def runways(icao: str) -> dict:
+    """Runway endpoints + width for a given airport, projected to radar coords."""
+    out = []
+    for rw in airports_db.runways_for(icao):
+        le = project(rw["le_lat"], rw["le_lon"])
+        he = project(rw["he_lat"], rw["he_lon"])
+        if le is None or he is None:
+            continue
+        out.append({
+            **rw,
+            "le_x": le[0], "le_y": le[1],
+            "he_x": he[0], "he_y": he[1],
+        })
+    return {"icao": icao.upper(), "runways": out}
 
 
 @app.get("/api/aircraft")

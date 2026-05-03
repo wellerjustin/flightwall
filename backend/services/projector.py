@@ -65,11 +65,32 @@ def distance_nm(lat: float, lon: float) -> float | None:
     return math.hypot(dx_nm, dy_nm)
 
 
-def project_history(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    """Project a list of (lat, lon) points; drop any that fail."""
-    out: list[tuple[float, float]] = []
-    for lat, lon in points:
+def bearing_deg(lat: float, lon: float) -> float | None:
+    """Compass bearing (deg, 0=N) from station to (lat, lon)."""
+    if lat is None or lon is None:
+        return None
+    s_lat = settings.STATION_LAT
+    s_lon = settings.STATION_LON
+    nm_per_deg_lon = _NM_PER_DEG_LAT * math.cos(math.radians(s_lat))
+    dx_nm = (lon - s_lon) * nm_per_deg_lon
+    dy_nm = (lat - s_lat) * _NM_PER_DEG_LAT
+    return (math.degrees(math.atan2(dx_nm, dy_nm)) + 360) % 360
+
+
+def project_history(points):
+    """Project (lat, lon[, alt]) points; preserves alt for color-by-altitude trails.
+
+    Returns a list of (x_pct, y_pct, alt) tuples. `alt` may be None.
+    Backwards-compatible: accepts (lat, lon) pairs too.
+    """
+    out: list[tuple[float, float, float | None]] = []
+    for pt in points:
+        if len(pt) == 2:
+            lat, lon = pt
+            alt = None
+        else:
+            lat, lon, alt = pt[0], pt[1], pt[2]
         p = project(lat, lon)
         if p is not None:
-            out.append(p)
+            out.append((p[0], p[1], alt))
     return out

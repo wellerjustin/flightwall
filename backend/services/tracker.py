@@ -14,16 +14,20 @@ from ..config import settings
 
 
 class _Track:
-    """One aircraft's most recent record + a deque of (lat, lon) points."""
+    """One aircraft's most recent record + a deque of (lat, lon, alt) points.
+
+    Altitude is preserved per point so the frontend can color each segment
+    of the trail by the altitude the aircraft was at when it was there.
+    """
     __slots__ = ("record", "history", "first_seen", "last_update")
 
     def __init__(self, record: dict, now: float) -> None:
         self.record = record
-        self.history: Deque[tuple[float, float]] = deque(maxlen=settings.TRACK_HISTORY)
+        self.history: Deque[tuple[float, float, float | None]] = deque(maxlen=settings.TRACK_HISTORY)
         self.first_seen = now
         self.last_update = now
         if record.get("lat") is not None and record.get("lon") is not None:
-            self.history.append((record["lat"], record["lon"]))
+            self.history.append((record["lat"], record["lon"], record.get("alt_baro")))
 
     def update(self, record: dict, now: float) -> None:
         self.record = record
@@ -32,9 +36,9 @@ class _Track:
         if lat is None or lon is None:
             return
         # Don't append if the position hasn't actually moved (cuts noise).
-        if self.history and self.history[-1] == (lat, lon):
+        if self.history and (self.history[-1][0], self.history[-1][1]) == (lat, lon):
             return
-        self.history.append((lat, lon))
+        self.history.append((lat, lon, record.get("alt_baro")))
 
 
 class Tracker:
